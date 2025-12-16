@@ -8,6 +8,21 @@ import base64
 from pathlib import Path
 from app.gemini_parser import extract_json_from_gemini
 from pathlib import Path
+from app.review_persistence import save_file_review
+from fastapi import Depends
+from sqlalchemy.orm import Session
+from app.database import Base, get_db
+from app.database import engine
+from app.models import Base
+from app.models import (
+    Base,
+    ReviewRequest,
+    ReviewFile,
+    ReviewSession,
+)
+
+Base.metadata.create_all(bind=engine)
+
 
 from fastapi.responses import JSONResponse
 import logging
@@ -104,7 +119,7 @@ def is_reviewable_file(path: str) -> bool:
 
 
 @app.post("/review")
-async def review(req: ReviewRequest):
+async def review(req: ReviewRequest, db: Session = Depends(get_db)):
     if req.action not in ("file", "full"):
         raise HTTPException(status_code=400, detail="Unsupported action")
 
@@ -149,7 +164,7 @@ async def review(req: ReviewRequest):
                     detail="AI review service failed"
                 )
 
-            return {
+            response = {
                 "project": f"{req.owner}/{req.repo}@{req.ref}",
                 "mode": "file",
                 "filename": req.filename,
@@ -157,6 +172,10 @@ async def review(req: ReviewRequest):
                 "topIssues": file_review.get("issues", []),
                 "file": file_review,
             }
+
+            save_file_review(db, response)
+
+            return response
 
         # ---------- FULL PROJECT REVIEW ----------
         try:
@@ -221,3 +240,44 @@ async def review(req: ReviewRequest):
     except HTTPException:
         # rethrow clean API errors
         raise
+
+@app.get("/reviews/last")
+def get_last_review(
+    project: str,
+    filename: str,
+    db: Session = Depends(get_db),
+):
+    file = (
+        db.query(ReviewFile)
+        .join(ReviewSession)
+        .filter(
+            ReviewSession.project == project,
+            ReviewFile.filename == filename,
+        )
+        .order_by(ReviewSession.created_at.desc())
+        .first()
+    )
+
+    if not file:
+        return {"exists": False, "message": "No previous review found for this file."}
+
+    return {
+        "exists": True,
+        "filename": file.filename,
+        "fileScore": file.file_score,
+        "issues": [
+            {
+                "line": i.line_number,
+                "severity": i.severity,
+                "type": i.issue_type,
+                "message": i.message,
+            }
+            for i in file.issues
+        ],
+        "metrics": {
+            "complexity": file.metrics.complexity if file.metrics else None,
+            "readability": file.metrics.readability if file.metrics else None,
+            "testCoverageEstimate": file.metrics.test_coverage_estimate if file.metrics else None,
+            "documentationScore": file.metrics.documentation_score if file.metrics else None,
+        },
+    }
