@@ -56,6 +56,38 @@ EXCLUDED_DIRS = {
     "__pycache__",
 }
 
+EXTENSION_LANGUAGE_MAP = {
+    ".js": "javascript",
+    ".ts": "typescript",
+    ".jsx": "javascript",
+    ".tsx": "typescript",
+    ".py": "python",
+    ".java": "java",
+    ".kt": "kotlin",
+    ".go": "go",
+    ".rs": "rust",
+    ".cpp": "cpp",
+    ".c": "c",
+    ".cs": "csharp",
+    ".php": "php",
+    ".rb": "ruby",
+    ".swift": "swift",
+    ".html": "html",
+    ".css": "css",
+    ".scss": "scss",
+    ".json": "json",
+    ".yml": "yaml",
+    ".yaml": "yaml",
+    ".md": "markdown",
+    ".sh": "shell",
+}
+
+def detect_language(path: str) -> str:
+    return EXTENSION_LANGUAGE_MAP.get(
+        Path(path).suffix.lower(),
+        "text",
+    )
+
 def is_reviewable_file(path: str) -> bool:
     p = Path(path)
 
@@ -150,14 +182,15 @@ async def review(req: ReviewRequest):
 
             try:
                 file_data = await get_file_content(req.owner, req.repo, req.ref, path)
-                content = base64.b64decode(file_data["content"]).decode()
+                content = base64.b64decode(file_data["content"]).decode("utf-8", errors="ignore")
+                language = detect_language(path)
 
                 prompt = build_project_prompt(
                     owner=req.owner,
                     repo=req.repo,
                     ref=req.ref,
                     filename=path,
-                    language=req.language,
+                    language=language,
                     content=content,
                 )
 
