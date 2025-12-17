@@ -263,6 +263,7 @@ def get_last_review(
 
     return {
         "exists": True,
+        "createdAt": file.created_at,
         "filename": file.filename,
         "fileScore": file.file_score,
         "issues": [
