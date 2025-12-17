@@ -282,3 +282,21 @@ def get_last_review(
             "documentationScore": file.metrics.documentation_score if file.metrics else None,
         },
     }
+
+@app.get("/reviews/files")
+def list_reviewed_files(
+    project: str,
+    db: Session = Depends(get_db),
+):
+    files = (
+        db.query(ReviewFile.filename)
+        .join(ReviewSession)
+        .filter(ReviewSession.project == project)
+        .distinct()
+        .all()
+    )
+
+    return {
+        "project": project,
+        "files": [f.filename for f in files],
+    }

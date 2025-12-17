@@ -7,9 +7,11 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
+from sqlalchemy import UniqueConstraint
 
 class ReviewSession(Base):
     __tablename__ = "review_sessions"
+    
 
     id = Column(BigInteger, primary_key=True)
     project = Column(String(255), nullable=False)
@@ -24,12 +26,21 @@ class ReviewSession(Base):
 class ReviewFile(Base):
     __tablename__ = "review_files"
 
+    __table_args__ = (
+        UniqueConstraint( "filename", name="uq_session_filename"),
+    )
+
     id = Column(BigInteger, primary_key=True)
     session_id = Column(BigInteger, ForeignKey("review_sessions.id"), nullable=False)
     filename = Column(String(500), nullable=False)
     language = Column(String(50))
     file_score = Column(Integer)
     created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(
+        TIMESTAMP,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
 
     session = relationship("ReviewSession", back_populates="files")
     issues = relationship("ReviewIssue", cascade="all, delete")

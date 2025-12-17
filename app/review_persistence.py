@@ -5,26 +5,54 @@ from app.models import (
 )
 
 def save_file_review(db: Session, response: dict):
+    project = response["project"]
+    filename = response["filename"]
+    file_data = response["file"]
+
+    # 1. Always create a new session (history)
     session = ReviewSession(
-        project=response["project"],
+        project=project,
         mode=response["mode"],
         overall_score=response["overallProjectScore"],
         raw_response=response,
     )
     db.add(session)
-    db.flush()  # get session.id
-
-    file_data = response["file"]
-
-    file = ReviewFile(
-        session_id=session.id,
-        filename=response["filename"],
-        file_score=file_data.get("overallFileScore"),
-        language="javascript",  # already detected earlier
-    )
-    db.add(file)
     db.flush()
 
+    # 2. Find existing file for this project + filename
+    existing_file = (
+        db.query(ReviewFile)
+        .join(ReviewSession)
+        .filter(
+            ReviewSession.project == project,
+            ReviewFile.filename == filename,
+        )
+        .first()
+    )
+
+    if existing_file:
+        # UPDATE existing file
+        file = existing_file
+        file.session_id = session.id
+        file.file_score = file_data.get("overallFileScore")
+        file.language = "javascript"
+
+        # Remove old children
+        db.query(ReviewIssue).filter_by(file_id=file.id).delete()
+        db.query(ReviewSuggestion).filter_by(file_id=file.id).delete()
+        db.query(ReviewMetric).filter_by(file_id=file.id).delete()
+    else:
+        # INSERT new file
+        file = ReviewFile(
+            session_id=session.id,
+            filename=filename,
+            file_score=file_data.get("overallFileScore"),
+            language="javascript",
+        )
+        db.add(file)
+        db.flush()
+
+    # Insert issues
     for issue in file_data.get("issues", []):
         db.add(ReviewIssue(
             file_id=file.id,
@@ -34,6 +62,7 @@ def save_file_review(db: Session, response: dict):
             message=issue["message"],
         ))
 
+    # Insert suggestions
     for sug in file_data.get("suggestions", []):
         db.add(ReviewSuggestion(
             file_id=file.id,
@@ -42,6 +71,7 @@ def save_file_review(db: Session, response: dict):
             diff_example=sug.get("diff_example"),
         ))
 
+    # Insert metrics
     metrics = file_data.get("metrics")
     if metrics:
         db.add(ReviewMetric(
