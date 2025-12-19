@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Literal, List
 from sqlalchemy import (
     Column, Integer, BigInteger, String, Text, ForeignKey,
     Enum, TIMESTAMP, JSON
@@ -78,9 +78,19 @@ class ReviewMetric(Base):
     test_coverage_estimate = Column(Integer)
     documentation_score = Column(Integer)
 
+class LocalReviewFile(BaseModel):
+    filename: str
+    path: str  
+    content: str
 class ReviewRequest(BaseModel):
-    action: str  # "file" | "full"
-    owner: str
-    repo: str
-    ref: str
+    action: Literal["file", "full"]
+    owner: Optional[str] = None
+    localProjectId: Optional[str]
+    repo: Optional[str] = None
+    ref: Optional[str] = None
     filename: Optional[str] = None
+
+    mode: Optional[str] = None
+    files: Optional[List[LocalReviewFile]] = None
+
+

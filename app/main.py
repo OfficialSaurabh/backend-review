@@ -125,6 +125,52 @@ async def review(req: ReviewRequest, db: Session = Depends(get_db)):
 
     try:
         if req.action == "file":
+            if req.mode == "local":
+                if not req.files or len(req.files) == 0:
+                    raise HTTPException(status_code=400, detail="files required for local review")
+
+                results = []
+
+                for f in req.files:
+                    language = detect_language(f.filename)
+
+                    prompt = build_file_prompt(
+                        owner=req.owner,
+                        repo=req.owner,
+                        ref="local",
+                        filename=f.filename,
+                        language=language,
+                        content=f.content,
+                    )
+
+                    try:
+                        raw_review = review_code(prompt)
+                        parsed = extract_json_from_gemini(raw_review)
+                    except Exception:
+                        logger.exception("Gemini processing failed")
+                        raise HTTPException(
+                            status_code=502,
+                            detail="AI review service failed"
+                        )
+                    if not req.localProjectId:
+                        raise HTTPException(status_code=400, detail="localProjectId required")
+
+                    project = f"local:{req.owner}:{req.localProjectId}"
+
+                    response = {
+                        "project": project,
+                        "mode": "file",
+                        "filename": f.filename,
+                        "path": f.path, 
+                        "overallProjectScore": parsed.get("overallFileScore", 0),
+                        "topIssues": parsed.get("issues", []),
+                        "file": parsed,
+                    }
+
+                    save_file_review(db, response)
+                    results.append(response)
+
+                return results if len(results) > 1 else results[0]
             if not req.filename:
                 raise HTTPException(status_code=400, detail="filename required")
 
@@ -241,6 +287,7 @@ async def review(req: ReviewRequest, db: Session = Depends(get_db)):
         # rethrow clean API errors
         raise
 
+# Last Review Retrieval Endpoint
 @app.get("/reviews/last")
 def get_last_review(
     project: str,
