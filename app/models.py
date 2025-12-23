@@ -85,11 +85,10 @@ class LocalReviewFile(BaseModel):
 class ReviewRequest(BaseModel):
     action: Literal["file", "full"]
     owner: Optional[str] = None
-    localProjectId: Optional[str]
+    # localProjectId: Optional[str]
     repo: Optional[str] = None
     ref: Optional[str] = None
     filename: Optional[str] = None
-
     mode: Optional[str] = None
     files: Optional[List[LocalReviewFile]] = None
 

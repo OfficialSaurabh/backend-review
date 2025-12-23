@@ -152,13 +152,9 @@ async def review(req: ReviewRequest, db: Session = Depends(get_db)):
                             status_code=502,
                             detail="AI review service failed"
                         )
-                    if not req.localProjectId:
-                        raise HTTPException(status_code=400, detail="localProjectId required")
-
-                    project = f"local:{req.owner}:{req.localProjectId}"
 
                     response = {
-                        "project": project,
+                        "project": "local",
                         "mode": "file",
                         "filename": f.filename,
                         "path": f.path, 
@@ -167,7 +163,7 @@ async def review(req: ReviewRequest, db: Session = Depends(get_db)):
                         "file": parsed,
                     }
 
-                    save_file_review(db, response)
+                    # save_file_review(db, response)
                     results.append(response)
 
                 return results if len(results) > 1 else results[0]
