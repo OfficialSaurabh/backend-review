@@ -83,3 +83,82 @@ def save_file_review(db: Session, response: dict):
         ))
 
     db.commit()
+
+def save_full_review(db: Session, response: dict):
+    project = response["project"]
+    files = response["files"]
+
+    # 1. Create session
+    session = ReviewSession(
+        project=project,
+        mode=response["mode"],
+        overall_score=response["overallProjectScore"],
+        raw_response=response,
+    )
+    db.add(session)
+    db.flush()
+
+    for file_data in files:
+        filename = file_data.get("filename") or file_data.get("path")
+
+        # 2. Check existing file
+        existing_file = (
+            db.query(ReviewFile)
+            .join(ReviewSession)
+            .filter(
+                ReviewSession.project == project,
+                ReviewFile.filename == filename,
+            )
+            .first()
+        )
+
+        if existing_file:
+            file = existing_file
+            file.session_id = session.id
+            file.file_score = file_data.get("overallFileScore")
+            file.language = "javascript"
+
+            db.query(ReviewIssue).filter_by(file_id=file.id).delete()
+            db.query(ReviewSuggestion).filter_by(file_id=file.id).delete()
+            db.query(ReviewMetric).filter_by(file_id=file.id).delete()
+        else:
+            file = ReviewFile(
+                session_id=session.id,
+                filename=filename,
+                file_score=file_data.get("overallFileScore"),
+                language="javascript",
+            )
+            db.add(file)
+            db.flush()
+
+        # 3. Issues
+        for issue in file_data.get("issues", []):
+            db.add(ReviewIssue(
+                file_id=file.id,
+                line_number=issue.get("line"),
+                severity=issue["severity"],
+                issue_type=issue.get("type"),
+                message=issue["message"],
+            ))
+
+        # 4. Suggestions
+        for sug in file_data.get("suggestions", []):
+            db.add(ReviewSuggestion(
+                file_id=file.id,
+                title=sug["title"],
+                explanation=sug["explanation"],
+                diff_example=sug.get("diff_example"),
+            ))
+
+        # 5. Metrics
+        metrics = file_data.get("metrics")
+        if metrics:
+            db.add(ReviewMetric(
+                file_id=file.id,
+                complexity=metrics.get("complexity"),
+                readability=metrics.get("readability"),
+                test_coverage_estimate=metrics.get("testCoverageEstimate"),
+                documentation_score=metrics.get("documentationScore"),
+            ))
+
+    db.commit()

@@ -8,7 +8,7 @@ import base64
 from pathlib import Path
 from app.gemini_parser import extract_json_from_gemini
 from pathlib import Path
-from app.review_persistence import save_file_review
+from app.review_persistence import save_file_review, save_full_review
 from fastapi import Depends
 from sqlalchemy.orm import Session
 from app.database import Base, get_db
@@ -234,6 +234,7 @@ async def review(req: ReviewRequest, db: Session = Depends(get_db)):
         scores = []
 
         for item in tree:
+            logger.info(f"Tree item: {item['path']} ({item['type']})")
             if item["type"] != "blob":
                 continue
 
@@ -241,6 +242,7 @@ async def review(req: ReviewRequest, db: Session = Depends(get_db)):
             if not is_reviewable_file(path):
                 continue
 
+            logger.info(f"Reviewing file: {path}")
             try:
                 file_data = await get_file_content(req.owner, req.repo, req.ref, path)
                 content = base64.b64decode(file_data["content"]).decode("utf-8", errors="ignore")
@@ -270,7 +272,7 @@ async def review(req: ReviewRequest, db: Session = Depends(get_db)):
 
         overall_project_score = sum(scores) // len(scores) if scores else 0
 
-        return {
+        full_response = {
             "project": f"{req.owner}/{req.repo}@{req.ref}",
             "mode": "full",
             "overallProjectScore": overall_project_score,
@@ -278,6 +280,9 @@ async def review(req: ReviewRequest, db: Session = Depends(get_db)):
             "topIssues": all_issues[:20],
             "files": results,
         }
+
+        save_full_review(db, full_response)
+        return full_response
 
     except HTTPException:
         # rethrow clean API errors
