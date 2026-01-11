@@ -272,11 +272,24 @@ async def review(req: ReviewRequest, db: Session = Depends(get_db)):
 
         overall_project_score = sum(scores) // len(scores) if scores else 0
 
+        def avg(values):
+            return round(sum(values) / len(values)) if values else 0
+
+        metrics_list = [f.get("metrics", {}) for f in results]
+
+        full_metrics = {
+            "complexity": avg([m.get("complexity", 0) for m in metrics_list]),
+            "readability": avg([m.get("readability", 0) for m in metrics_list]),
+            "testCoverageEstimate": avg([m.get("testCoverageEstimate", 0) for m in metrics_list]),
+            "documentationScore": avg([m.get("documentationScore", 0) for m in metrics_list]),
+        }
+
         full_response = {
             "project": f"{req.owner}/{req.repo}@{req.ref}",
             "mode": "full",
             "overallProjectScore": overall_project_score,
             "filesReviewed": len(results),
+            "metrics": full_metrics,
             "topIssues": all_issues[:20],
             "files": results,
         }
