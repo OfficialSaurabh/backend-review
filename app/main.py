@@ -289,7 +289,9 @@ async def review(req: ReviewRequest, db: Session = Depends(get_db)):
             "mode": "full",
             "overallProjectScore": overall_project_score,
             "filesReviewed": len(results),
-            "metrics": full_metrics,
+            "file": {
+                "metrics": full_metrics
+            },
             "topIssues": all_issues[:20],
             "files": results,
         }
