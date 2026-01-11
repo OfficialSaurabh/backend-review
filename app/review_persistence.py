@@ -122,9 +122,10 @@ def save_full_review(db: Session, response: dict):
             db.query(ReviewSuggestion).filter_by(file_id=file.id).delete()
             db.query(ReviewMetric).filter_by(file_id=file.id).delete()
         else:
+            normalized_filename = filename if filename.startswith("/") else f"/{filename}"
             file = ReviewFile(
                 session_id=session.id,
-                filename=filename,
+                filename=normalized_filename,
                 file_score=file_data.get("overallFileScore"),
                 language="javascript",
             )
