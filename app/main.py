@@ -346,6 +346,39 @@ def get_last_review(
         },
     }
 
+@app.get("/reviews/full/last")
+def get_last_full_review(project: str, db: Session = Depends(get_db)):
+    session = (
+        db.query(ReviewSession)
+        .filter(ReviewSession.project == project, ReviewSession.mode == "full")
+        .order_by(ReviewSession.created_at.desc())
+        .first()
+    )
+
+    if not session or not session.raw_response:
+        return {"exists": False, "message": "No previous full review found."}
+
+    raw = session.raw_response  # this is your stored JSON
+
+    metrics = raw.get("file", {}).get("metrics", {})
+    top_issues = raw.get("topIssues", [])
+    overall = raw.get("overallProjectScore", 0)
+
+    return {
+        "exists": True,
+        "createdAt": session.created_at,
+        "filename": "FULL_PROJECT",
+        "fileScore": overall,
+        "issues": top_issues,
+        "metrics": {
+            "complexity": metrics.get("complexity", 0),
+            "readability": metrics.get("readability", 0),
+            "testCoverageEstimate": metrics.get("testCoverageEstimate", 0),
+            "documentationScore": metrics.get("documentationScore", 0),
+        },
+    }
+
+
 @app.get("/reviews/files")
 def list_reviewed_files(
     project: str,
