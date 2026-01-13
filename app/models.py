@@ -82,14 +82,29 @@ class LocalReviewFile(BaseModel):
     filename: str
     path: str  
     content: str
+# class ReviewRequest(BaseModel):
+#     action: Literal["file", "full"]
+#     owner: Optional[str] = None
+#     # localProjectId: Optional[str]
+#     repo: Optional[str] = None
+#     ref: Optional[str] = None
+#     filename: Optional[str] = None
+#     mode: Optional[str] = None
+#     files: Optional[List[LocalReviewFile]] = None
+
+class ReviewFileInput(BaseModel):
+    filename: str
+    path: str
+    content: str
 class ReviewRequest(BaseModel):
+    provider: Literal["github", "bitbucket"]   # 🔴 THIS IS REQUIRED NOW
     action: Literal["file", "full"]
-    owner: Optional[str] = None
-    # localProjectId: Optional[str]
-    repo: Optional[str] = None
-    ref: Optional[str] = None
+    accessToken: str
+    mode: Optional[Literal["local"]] = None
+    owner: str
+    repo: str
+    ref: str
     filename: Optional[str] = None
-    mode: Optional[str] = None
-    files: Optional[List[LocalReviewFile]] = None
+    files: Optional[List[ReviewFileInput]] = None
 
 
