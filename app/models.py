@@ -1,23 +1,39 @@
 from pydantic import BaseModel, model_validator
 from typing import Optional, Literal, List
+import enum
 from sqlalchemy import (
     Column, Integer, BigInteger, String, Text, ForeignKey,
-    Enum, TIMESTAMP, JSON
+    Enum, TIMESTAMP, JSON, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
-from sqlalchemy import UniqueConstraint
+
+
+# ---------- ENUM DEFINITIONS (portable) ----------
+
+class ReviewMode(enum.Enum):
+    file = "file"
+    full = "full"
+
+class SeverityLevel(enum.Enum):
+    critical = "critical"
+    major = "major"
+    minor = "minor"
+
+
+# ---------- TABLES ----------
 
 class ReviewSession(Base):
     __tablename__ = "review_sessions"
-    
 
-    id = Column(BigInteger, primary_key=True)
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
     project = Column(String(255), nullable=False)
-    mode = Column(Enum("file", "full"), nullable=False)
+
+    mode = Column(Enum(ReviewMode, name="review_mode_enum"), nullable=False)
+
     overall_score = Column(Integer)
-    raw_response = Column(JSON)  # Oracle → CLOB
+    raw_response = Column(JSON)
     created_at = Column(TIMESTAMP, server_default=func.now())
 
     files = relationship("ReviewFile", back_populates="session", cascade="all, delete")
@@ -25,22 +41,19 @@ class ReviewSession(Base):
 
 class ReviewFile(Base):
     __tablename__ = "review_files"
-
     __table_args__ = (
-        UniqueConstraint( "filename", name="uq_session_filename"),
+        UniqueConstraint("session_id", "filename", name="uq_session_filename"),
     )
 
-    id = Column(BigInteger, primary_key=True)
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
     session_id = Column(BigInteger, ForeignKey("review_sessions.id"), nullable=False)
+
     filename = Column(String(500), nullable=False)
     language = Column(String(50))
     file_score = Column(Integer)
+
     created_at = Column(TIMESTAMP, server_default=func.now())
-    updated_at = Column(
-        TIMESTAMP,
-        server_default=func.now(),
-        onupdate=func.now(),
-    )
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
 
     session = relationship("ReviewSession", back_populates="files")
     issues = relationship("ReviewIssue", cascade="all, delete")
@@ -51,10 +64,13 @@ class ReviewFile(Base):
 class ReviewIssue(Base):
     __tablename__ = "review_issues"
 
-    id = Column(BigInteger, primary_key=True)
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
     file_id = Column(BigInteger, ForeignKey("review_files.id"), nullable=False)
+
     line_number = Column(Integer)
-    severity = Column(Enum("critical", "major", "minor"), nullable=False)
+
+    severity = Column(Enum(SeverityLevel, name="severity_enum"), nullable=False)
+
     issue_type = Column(String(100))
     message = Column(Text, nullable=False)
 
@@ -62,8 +78,9 @@ class ReviewIssue(Base):
 class ReviewSuggestion(Base):
     __tablename__ = "review_suggestions"
 
-    id = Column(BigInteger, primary_key=True)
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
     file_id = Column(BigInteger, ForeignKey("review_files.id"), nullable=False)
+
     title = Column(String(255))
     explanation = Column(Text)
     diff_example = Column(Text)
@@ -73,6 +90,7 @@ class ReviewMetric(Base):
     __tablename__ = "review_metrics"
 
     file_id = Column(BigInteger, ForeignKey("review_files.id"), primary_key=True)
+
     complexity = Column(Integer)
     readability = Column(Integer)
     test_coverage_estimate = Column(Integer)

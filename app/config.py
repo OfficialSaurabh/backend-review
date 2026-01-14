@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     BITBUCKET_USERNAME: str
     BITBUCKET_TOKEN: str
     GEMINI_API_KEY: str
+    DATABASE_URL: str
 
 
     class Config:
