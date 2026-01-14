@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from typing import Optional, Literal, List
 from sqlalchemy import (
     Column, Integer, BigInteger, String, Text, ForeignKey,
@@ -97,14 +97,32 @@ class ReviewFileInput(BaseModel):
     path: str
     content: str
 class ReviewRequest(BaseModel):
-    provider: Literal["github", "bitbucket"]   # 🔴 THIS IS REQUIRED NOW
+    provider: Optional[Literal["github", "bitbucket"]] = None
     action: Literal["file", "full"]
-    accessToken: str
+    accessToken: Optional[str] = None
     mode: Optional[Literal["local"]] = None
     owner: str
-    repo: str
-    ref: str
+    repo: Optional[str] = None
+    ref: Optional[str] = None
     filename: Optional[str] = None
     files: Optional[List[ReviewFileInput]] = None
+    localProjectId: Optional[str] = None
 
+    @model_validator(mode="after")
+    def validate_context(self):
+        # Local file review
+        if self.mode == "local":
+            if not self.files:
+                raise ValueError("files are required for local review")
+            return self
+
+        # Remote (GitHub / Bitbucket)
+        if not self.provider:
+            raise ValueError("provider is required")
+        if not self.accessToken:
+            raise ValueError("accessToken is required")
+        if not self.repo or not self.ref:
+            raise ValueError("repo and ref are required")
+
+        return self
 
