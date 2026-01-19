@@ -328,12 +328,15 @@ def get_last_review(
         "createdAt": file.created_at,
         "filename": file.filename,
         "fileScore": file.file_score,
+        "language": file.language,
         "issues": [
             {
-                "line": i.line_number,
+                "startLine": i.start_line,
+                "endLine": i.end_line,
                 "severity": i.severity,
                 "type": i.issue_type,
                 "message": i.message,
+                "codeSnippet": i.code_snippet,
             }
             for i in file.issues
         ],
