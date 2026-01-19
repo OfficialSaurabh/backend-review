@@ -4,6 +4,8 @@ from app.models import ReviewRequest
 from app.github_service import get_file_content, get_repo_tree
 from app.gemini_service import review_code
 from app.review_builders import build_file_prompt, build_project_prompt
+from app.providers.factory import get_provider
+import base64
 import base64
 from pathlib import Path
 from app.gemini_parser import extract_json_from_gemini
@@ -117,82 +119,81 @@ def is_reviewable_file(path: str) -> bool:
 
     return p.suffix.lower() in REVIEWABLE_EXTENSIONS
 
-
 @app.post("/review")
 async def review(req: ReviewRequest, db: Session = Depends(get_db)):
     if req.action not in ("file", "full"):
         raise HTTPException(status_code=400, detail="Unsupported action")
+    # ---------- LOCAL FILE REVIEW ----------
+    if req.action == "file" and req.mode == "local":
+        if not req.files or len(req.files) == 0:
+            raise HTTPException(status_code=400, detail="files required for local review")
+
+        results = []
+
+        for f in req.files:
+            language = detect_language(f.filename)
+
+            prompt = build_file_prompt(
+                owner="local",
+                repo="local",
+                ref="local",
+                filename=f.filename,
+                language=language,
+                content=f.content,
+            )
+
+            try:
+                raw_review = review_code(prompt)
+                parsed = extract_json_from_gemini(raw_review)
+            except Exception:
+                logger.exception("Gemini processing failed")
+                raise HTTPException(status_code=502, detail="AI review service failed")
+
+            response = {
+                "project": "local",
+                "mode": "file",
+                "filename": f.filename,
+                "path": f.path,
+                "overallProjectScore": parsed.get("overallFileScore", 0),
+                "topIssues": parsed.get("issues", []),
+                "file": parsed,
+            }
+
+            results.append(response)
+
+        return results if len(results) > 1 else results[0]
+
+    provider = get_provider(req.provider, req.accessToken)
 
     try:
+        # ---------- SINGLE FILE REVIEW ----------
         if req.action == "file":
-            if req.mode == "local":
-                if not req.files or len(req.files) == 0:
-                    raise HTTPException(status_code=400, detail="files required for local review")
-
-                results = []
-
-                for f in req.files:
-                    language = detect_language(f.filename)
-
-                    prompt = build_file_prompt(
-                        owner=req.owner,
-                        repo=req.owner,
-                        ref="local",
-                        filename=f.filename,
-                        language=language,
-                        content=f.content,
-                    )
-
-                    try:
-                        raw_review = review_code(prompt)
-                        parsed = extract_json_from_gemini(raw_review)
-                    except Exception:
-                        logger.exception("Gemini processing failed")
-                        raise HTTPException(
-                            status_code=502,
-                            detail="AI review service failed"
-                        )
-
-                    response = {
-                        "project": "local",
-                        "mode": "file",
-                        "filename": f.filename,
-                        "path": f.path, 
-                        "overallProjectScore": parsed.get("overallFileScore", 0),
-                        "topIssues": parsed.get("issues", []),
-                        "file": parsed,
-                    }
-
-                    # save_file_review(db, response)
-                    results.append(response)
-
-                return results if len(results) > 1 else results[0]
             if not req.filename:
                 raise HTTPException(status_code=400, detail="filename required")
 
             try:
-                data = await get_file_content(req.owner, req.repo, req.ref, req.filename)
-            except Exception as e:
-                logger.exception("GitHub file fetch failed")
-                raise HTTPException(
-                    status_code=502,
-                    detail="Failed to fetch file from GitHub"
+                raw = await provider.get_file_content(
+                    req.owner, req.repo, req.ref, req.filename
                 )
 
-            try:
-                content = base64.b64decode(data["content"]).decode()
+                # GitHub returns base64 JSON, Bitbucket returns raw text
+                if req.provider == "github":
+                    content = base64.b64decode(raw["content"]).decode()
+                else:  # bitbucket
+                    content = raw
+
             except Exception:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Failed to decode file content"
-                )
+                logger.exception("File fetch failed")
+                raise HTTPException(status_code=502, detail="Failed to fetch file")
+
+            language = detect_language(req.filename)
 
             prompt = build_file_prompt(
                 owner=req.owner,
                 repo=req.repo,
                 ref=req.ref,
                 filename=req.filename,
-                language="javascript",
+                language=language,
                 content=content,
             )
 
@@ -201,13 +202,10 @@ async def review(req: ReviewRequest, db: Session = Depends(get_db)):
                 file_review = extract_json_from_gemini(raw_review)
             except Exception:
                 logger.exception("Gemini processing failed")
-                raise HTTPException(
-                    status_code=502,
-                    detail="AI review service failed"
-                )
+                raise HTTPException(status_code=502, detail="AI review service failed")
 
             response = {
-                "project": f"{req.owner}/{req.repo}@{req.ref}",
+                "project": f"{req.provider}:{req.owner}/{req.repo}@{req.ref}",
                 "mode": "file",
                 "filename": req.filename,
                 "overallProjectScore": file_review.get("overallFileScore", 0),
@@ -216,25 +214,20 @@ async def review(req: ReviewRequest, db: Session = Depends(get_db)):
             }
 
             save_file_review(db, response)
-
             return response
 
         # ---------- FULL PROJECT REVIEW ----------
         try:
-            tree = await get_repo_tree(req.owner, req.repo, req.ref)
+            tree = await provider.get_repo_tree(req.owner, req.repo, req.ref)
         except Exception:
-            logger.exception("GitHub repo tree fetch failed")
-            raise HTTPException(
-                status_code=502,
-                detail="Failed to fetch repository tree"
-            )
+            logger.exception("Repo tree fetch failed")
+            raise HTTPException(status_code=502, detail="Failed to fetch repository tree")
 
         results = []
         all_issues = []
         scores = []
 
         for item in tree:
-            logger.info(f"Tree item: {item['path']} ({item['type']})")
             if item["type"] != "blob":
                 continue
 
@@ -242,10 +235,14 @@ async def review(req: ReviewRequest, db: Session = Depends(get_db)):
             if not is_reviewable_file(path):
                 continue
 
-            logger.info(f"Reviewing file: {path}")
             try:
-                file_data = await get_file_content(req.owner, req.repo, req.ref, path)
-                content = base64.b64decode(file_data["content"]).decode("utf-8", errors="ignore")
+                raw = await provider.get_file_content(req.owner, req.repo, req.ref, path)
+
+                if req.provider == "github":
+                    content = base64.b64decode(raw["content"]).decode("utf-8", errors="ignore")
+                else:
+                    content = raw
+
                 language = detect_language(path)
 
                 prompt = build_project_prompt(
@@ -257,8 +254,8 @@ async def review(req: ReviewRequest, db: Session = Depends(get_db)):
                     content=content,
                 )
 
-                raw = review_code(prompt)
-                parsed = extract_json_from_gemini(raw)
+                raw_review = review_code(prompt)
+                parsed = extract_json_from_gemini(raw_review)
 
                 results.append(parsed)
                 all_issues.extend(parsed.get("issues", []))
@@ -266,7 +263,6 @@ async def review(req: ReviewRequest, db: Session = Depends(get_db)):
                     scores.append(parsed["overallFileScore"])
 
             except Exception:
-                # IMPORTANT: skip failed file, don't kill whole review
                 logger.exception(f"Failed reviewing file: {path}")
                 continue
 
@@ -285,13 +281,11 @@ async def review(req: ReviewRequest, db: Session = Depends(get_db)):
         }
 
         full_response = {
-            "project": f"{req.owner}/{req.repo}@{req.ref}",
+            "project": f"{req.provider}:{req.owner}/{req.repo}@{req.ref}",
             "mode": "full",
             "overallProjectScore": overall_project_score,
             "filesReviewed": len(results),
-            "file": {
-                "metrics": full_metrics
-            },
+            "file": {"metrics": full_metrics},
             "topIssues": all_issues[:20],
             "files": results,
         }
@@ -300,16 +294,21 @@ async def review(req: ReviewRequest, db: Session = Depends(get_db)):
         return full_response
 
     except HTTPException:
-        # rethrow clean API errors
         raise
+
 
 # Last Review Retrieval Endpoint
 @app.get("/reviews/last")
 def get_last_review(
-    project: str,
+    provider: str,
+    owner: str,
+    repo: str,
+    ref: str,
     filename: str,
     db: Session = Depends(get_db),
 ):
+    project = f"{provider}:{owner}/{repo}@{ref}"
+
     file = (
         db.query(ReviewFile)
         .join(ReviewSession)
@@ -329,12 +328,15 @@ def get_last_review(
         "createdAt": file.created_at,
         "filename": file.filename,
         "fileScore": file.file_score,
+        "language": file.language,
         "issues": [
             {
-                "line": i.line_number,
+                "startLine": i.start_line,
+                "endLine": i.end_line,
                 "severity": i.severity,
                 "type": i.issue_type,
                 "message": i.message,
+                "codeSnippet": i.code_snippet,
             }
             for i in file.issues
         ],
@@ -346,11 +348,23 @@ def get_last_review(
         },
     }
 
+
 @app.get("/reviews/full/last")
-def get_last_full_review(project: str, db: Session = Depends(get_db)):
+def get_last_full_review(
+    provider: str,
+    owner: str,
+    repo: str,
+    ref: str,
+    db: Session = Depends(get_db),
+):
+    project = f"{provider}:{owner}/{repo}@{ref}"
+
     session = (
         db.query(ReviewSession)
-        .filter(ReviewSession.project == project, ReviewSession.mode == "full")
+        .filter(
+            ReviewSession.project == project,
+            ReviewSession.mode == "full"
+        )
         .order_by(ReviewSession.created_at.desc())
         .first()
     )
@@ -358,7 +372,7 @@ def get_last_full_review(project: str, db: Session = Depends(get_db)):
     if not session or not session.raw_response:
         return {"exists": False, "message": "No previous full review found."}
 
-    raw = session.raw_response  # this is your stored JSON
+    raw = session.raw_response
 
     metrics = raw.get("file", {}).get("metrics", {})
     top_issues = raw.get("topIssues", [])
@@ -381,9 +395,13 @@ def get_last_full_review(project: str, db: Session = Depends(get_db)):
 
 @app.get("/reviews/files")
 def list_reviewed_files(
-    project: str,
+    provider: str,
+    owner: str,
+    repo: str,
+    ref: str,
     db: Session = Depends(get_db),
 ):
+    project = f"{provider}:{owner}/{repo}@{ref}"
     files = (
         db.query(ReviewFile.filename)
         .join(ReviewSession)

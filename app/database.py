@@ -1,9 +1,26 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
+from dotenv import load_dotenv
+import os
+from urllib.parse import quote_plus
 
-DATABASE_URL = "mysql+pymysql://root:Saurabh%40202507@localhost:3306/ai_review"
+load_dotenv()
 
-engine = create_engine(DATABASE_URL)
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL not set")
+
+try:
+    engine = create_engine(DATABASE_URL)
+
+    # Force a real connection test
+    with engine.connect() as conn:
+        print("✅ Database connection successful")
+
+except Exception as e:
+    print("❌ Database connection failed")
+    print(f"Error: {e}")
+    raise 
 
 SessionLocal = sessionmaker(
     autocommit=False,

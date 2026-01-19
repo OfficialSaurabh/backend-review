@@ -4,3 +4,6 @@ httpx
 python-dotenv
 pydantic
 google-generativeai
+sqlalchemy
+psycopg2-binary
+pydantic-settings

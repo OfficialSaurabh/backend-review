@@ -2,7 +2,10 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     GITHUB_TOKEN: str
+    BITBUCKET_USERNAME: str
+    BITBUCKET_TOKEN: str
     GEMINI_API_KEY: str
+    DATABASE_URL: str
 
 
     class Config:
@@ -11,3 +14,6 @@ class Settings(BaseSettings):
 settings = Settings()
 
 print("GITHUB_TOKEN loaded:", bool(settings.GITHUB_TOKEN))
+print("BITBUCKET_USERNAME loaded:", bool(settings.BITBUCKET_USERNAME))
+print("BITBUCKET_TOKEN loaded:", bool(settings.BITBUCKET_TOKEN))
+
