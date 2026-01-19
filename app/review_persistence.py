@@ -4,12 +4,20 @@ from app.models import (
     ReviewIssue, ReviewSuggestion, ReviewMetric
 )
 
+ALLOWED_SEVERITIES = {"critical", "major", "minor"}
+
+def _validate_severity(value: str) -> str:
+    if value not in ALLOWED_SEVERITIES:
+        raise ValueError(f"Invalid severity '{value}' from AI")
+    return value
+
+
 def save_file_review(db: Session, response: dict):
     project = response["project"]
     filename = response["filename"]
     file_data = response["file"]
 
-    # 1. Always create a new session (history)
+    # 1. Create session (history)
     session = ReviewSession(
         project=project,
         mode=response["mode"],
@@ -31,18 +39,15 @@ def save_file_review(db: Session, response: dict):
     )
 
     if existing_file:
-        # UPDATE existing file
         file = existing_file
         file.session_id = session.id
         file.file_score = file_data.get("overallFileScore")
-        file.language = "javascript"
+        language=file_data.get("language")
 
-        # Remove old children
         db.query(ReviewIssue).filter_by(file_id=file.id).delete()
         db.query(ReviewSuggestion).filter_by(file_id=file.id).delete()
         db.query(ReviewMetric).filter_by(file_id=file.id).delete()
     else:
-        # INSERT new file
         file = ReviewFile(
             session_id=session.id,
             filename=filename,
@@ -52,17 +57,19 @@ def save_file_review(db: Session, response: dict):
         db.add(file)
         db.flush()
 
-    # Insert issues
+    # 3. Issues (NEW SCHEMA)
     for issue in file_data.get("issues", []):
         db.add(ReviewIssue(
             file_id=file.id,
-            line_number=issue.get("line"),
-            severity=issue["severity"],
+            start_line=issue.get("startLine"),
+            end_line=issue.get("endLine"),
+            severity=_validate_severity(issue["severity"]),
             issue_type=issue.get("type"),
             message=issue["message"],
+            code_snippet=issue.get("codeSnippet"),
         ))
 
-    # Insert suggestions
+    # 4. Suggestions
     for sug in file_data.get("suggestions", []):
         db.add(ReviewSuggestion(
             file_id=file.id,
@@ -71,7 +78,7 @@ def save_file_review(db: Session, response: dict):
             diff_example=sug.get("diff_example"),
         ))
 
-    # Insert metrics
+    # 5. Metrics
     metrics = file_data.get("metrics")
     if metrics:
         db.add(ReviewMetric(
@@ -83,6 +90,7 @@ def save_file_review(db: Session, response: dict):
         ))
 
     db.commit()
+
 
 def save_full_review(db: Session, response: dict):
     project = response["project"]
@@ -100,14 +108,14 @@ def save_full_review(db: Session, response: dict):
 
     for file_data in files:
         filename = file_data.get("filename") or file_data.get("path")
+        normalized_filename = filename if filename.startswith("/") else f"/{filename}"
 
-        # 2. Check existing file
         existing_file = (
             db.query(ReviewFile)
             .join(ReviewSession)
             .filter(
                 ReviewSession.project == project,
-                ReviewFile.filename == filename,
+                ReviewFile.filename == normalized_filename,
             )
             .first()
         )
@@ -122,7 +130,6 @@ def save_full_review(db: Session, response: dict):
             db.query(ReviewSuggestion).filter_by(file_id=file.id).delete()
             db.query(ReviewMetric).filter_by(file_id=file.id).delete()
         else:
-            normalized_filename = filename if filename.startswith("/") else f"/{filename}"
             file = ReviewFile(
                 session_id=session.id,
                 filename=normalized_filename,
@@ -132,17 +139,19 @@ def save_full_review(db: Session, response: dict):
             db.add(file)
             db.flush()
 
-        # 3. Issues
+        # 2. Issues (NEW SCHEMA)
         for issue in file_data.get("issues", []):
             db.add(ReviewIssue(
                 file_id=file.id,
-                line_number=issue.get("line"),
-                severity=issue["severity"],
+                start_line=issue.get("startLine"),
+                end_line=issue.get("endLine"),
+                severity=_validate_severity(issue["severity"]),
                 issue_type=issue.get("type"),
                 message=issue["message"],
+                code_snippet=issue.get("codeSnippet"),
             ))
 
-        # 4. Suggestions
+        # 3. Suggestions
         for sug in file_data.get("suggestions", []):
             db.add(ReviewSuggestion(
                 file_id=file.id,
@@ -151,7 +160,7 @@ def save_full_review(db: Session, response: dict):
                 diff_example=sug.get("diff_example"),
             ))
 
-        # 5. Metrics
+        # 4. Metrics
         metrics = file_data.get("metrics")
         if metrics:
             db.add(ReviewMetric(

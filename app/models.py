@@ -64,15 +64,17 @@ class ReviewFile(Base):
 class ReviewIssue(Base):
     __tablename__ = "review_issues"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    file_id = Column(BigInteger, ForeignKey("review_files.id"), nullable=False)
+    id = Column(Integer, primary_key=True)
+    file_id = Column(Integer, ForeignKey("review_files.id"))
 
-    line_number = Column(Integer)
+    start_line = Column(Integer)
+    end_line = Column(Integer)
+    code_snippet = Column(Text)
 
-    severity = Column(Enum(SeverityLevel, name="severity_enum"), nullable=False)
+    severity = Column(String)
+    issue_type = Column(String)
+    message = Column(Text)
 
-    issue_type = Column(String(100))
-    message = Column(Text, nullable=False)
 
 
 class ReviewSuggestion(Base):
