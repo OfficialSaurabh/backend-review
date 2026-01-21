@@ -44,8 +44,8 @@ def save_file_review(db: Session, response: dict):
         file.file_score = file_data.get("overallFileScore")
         file.language=file_data.get("language")
 
-        db.query(ReviewIssue).filter_by(file_id=file.id).delete()
         db.query(ReviewSuggestion).filter_by(file_id=file.id).delete()
+        db.query(ReviewIssue).filter_by(file_id=file.id).delete()
         db.query(ReviewMetric).filter_by(file_id=file.id).delete()
     else:
         file = ReviewFile(
@@ -58,8 +58,10 @@ def save_file_review(db: Session, response: dict):
         db.flush()
 
     # 3. Issues (NEW SCHEMA)
+    issue_objs = []
+
     for issue in file_data.get("issues", []):
-        db.add(ReviewIssue(
+        obj = ReviewIssue(
             file_id=file.id,
             start_line=issue.get("startLine"),
             end_line=issue.get("endLine"),
@@ -67,12 +69,18 @@ def save_file_review(db: Session, response: dict):
             issue_type=issue.get("type"),
             message=issue["message"],
             code_snippet=issue.get("codeSnippet"),
-        ))
-
+        )
+        db.add(obj)
+        issue_objs.append(obj)
+    db.flush() 
     # 4. Suggestions
     for sug in file_data.get("suggestions", []):
+        idx = sug.get("issueIndex")
+        issue_id = issue_objs[idx].id if idx is not None else None
+
         db.add(ReviewSuggestion(
             file_id=file.id,
+            issue_id=issue_id,
             title=sug["title"],
             explanation=sug["explanation"],
             diff_example=sug.get("diff_example"),
@@ -140,25 +148,36 @@ def save_full_review(db: Session, response: dict):
             db.flush()
 
         # 2. Issues (NEW SCHEMA)
-        for issue in file_data.get("issues", []):
-            db.add(ReviewIssue(
-                file_id=file.id,
-                start_line=issue.get("startLine"),
-                end_line=issue.get("endLine"),
-                severity=_validate_severity(issue["severity"]),
-                issue_type=issue.get("type"),
-                message=issue["message"],
-                code_snippet=issue.get("codeSnippet"),
-            ))
+        # 2. Issues
+    issue_objs = []
 
-        # 3. Suggestions
-        for sug in file_data.get("suggestions", []):
-            db.add(ReviewSuggestion(
-                file_id=file.id,
-                title=sug["title"],
-                explanation=sug["explanation"],
-                diff_example=sug.get("diff_example"),
-            ))
+    for issue in file_data.get("issues", []):
+        obj = ReviewIssue(
+            file_id=file.id,
+            start_line=issue.get("startLine"),
+            end_line=issue.get("endLine"),
+            severity=_validate_severity(issue["severity"]),
+            issue_type=issue.get("type"),
+            message=issue["message"],
+            code_snippet=issue.get("codeSnippet"),
+        )
+        db.add(obj)
+        issue_objs.append(obj)
+
+    db.flush()
+
+# 3. Suggestions (linked to issue)
+    for sug in file_data.get("suggestions", []):
+        idx = sug.get("issueIndex")
+        issue_id = issue_objs[idx].id if idx is not None else None
+
+        db.add(ReviewSuggestion(
+            file_id=file.id,
+            issue_id=issue_id,
+            title=sug["title"],
+            explanation=sug["explanation"],
+            diff_example=sug.get("diff_example"),
+        ))
 
         # 4. Metrics
         metrics = file_data.get("metrics")

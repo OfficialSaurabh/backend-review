@@ -299,6 +299,55 @@ async def review(req: ReviewRequest, db: Session = Depends(get_db)):
 
 
 # Last Review Retrieval Endpoint
+# @app.get("/reviews/last")
+# def get_last_review(
+#     provider: str,
+#     owner: str,
+#     repo: str,
+#     ref: str,
+#     filename: str,
+#     db: Session = Depends(get_db),
+# ):
+#     project = f"{provider}:{owner}/{repo}@{ref}"
+
+#     file = (
+#         db.query(ReviewFile)
+#         .join(ReviewSession)
+#         .filter(
+#             ReviewSession.project == project,
+#             ReviewFile.filename == filename,
+#         )
+#         .order_by(ReviewSession.created_at.desc())
+#         .first()
+#     )
+
+#     if not file:
+#         return {"exists": False, "message": "No previous review found for this file."}
+
+#     return {
+#         "exists": True,
+#         "createdAt": file.created_at,
+#         "filename": file.filename,
+#         "fileScore": file.file_score,
+#         "language": file.language,
+#         "issues": [
+#             {
+#                 "startLine": i.start_line,
+#                 "endLine": i.end_line,
+#                 "severity": i.severity,
+#                 "type": i.issue_type,
+#                 "message": i.message,
+#                 "codeSnippet": i.code_snippet,
+#             }
+#             for i in file.issues
+#         ],
+#         "metrics": {
+#             "complexity": file.metrics.complexity if file.metrics else None,
+#             "readability": file.metrics.readability if file.metrics else None,
+#             "testCoverageEstimate": file.metrics.test_coverage_estimate if file.metrics else None,
+#             "documentationScore": file.metrics.documentation_score if file.metrics else None,
+#         },
+#     }
 @app.get("/reviews/last")
 def get_last_review(
     provider: str,
@@ -309,12 +358,19 @@ def get_last_review(
     db: Session = Depends(get_db),
 ):
     project = f"{provider}:{owner}/{repo}@{ref}"
+    latest_session = (
+        db.query(ReviewSession)
+        .filter(ReviewSession.project == project)
+        .order_by(ReviewSession.created_at.desc())
+        .first()
+    )
 
     file = (
         db.query(ReviewFile)
         .join(ReviewSession)
         .filter(
-            ReviewSession.project == project,
+            ReviewFile.session_id == latest_session.id,
+            # ReviewSession.project == project,
             ReviewFile.filename == filename,
         )
         .order_by(ReviewSession.created_at.desc())
@@ -324,23 +380,38 @@ def get_last_review(
     if not file:
         return {"exists": False, "message": "No previous review found for this file."}
 
+    # Build issue map
+    issue_map = {}
+    for issue in file.issues:
+        issue_map[issue.id] = {
+            "id": issue.id,
+            "startLine": issue.start_line,
+            "endLine": issue.end_line,
+            "severity": issue.severity,
+            "type": issue.issue_type,
+            "message": issue.message,
+            "codeSnippet": issue.code_snippet,
+            "suggestions": []
+        }
+
+    # Attach suggestions to issues
+    for sug in file.suggestions:
+        target = issue_map.get(sug.issue_id)
+        if target is not None:
+            target["suggestions"].append({
+                "id": sug.id,
+                "title": sug.title,
+                "explanation": sug.explanation,
+                "diff_example": sug.diff_example,
+            })
+
     return {
         "exists": True,
         "createdAt": file.created_at,
         "filename": file.filename,
         "fileScore": file.file_score,
         "language": file.language,
-        "issues": [
-            {
-                "startLine": i.start_line,
-                "endLine": i.end_line,
-                "severity": i.severity,
-                "type": i.issue_type,
-                "message": i.message,
-                "codeSnippet": i.code_snippet,
-            }
-            for i in file.issues
-        ],
+        "issues": list(issue_map.values()),
         "metrics": {
             "complexity": file.metrics.complexity if file.metrics else None,
             "readability": file.metrics.readability if file.metrics else None,
