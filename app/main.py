@@ -208,6 +208,7 @@ async def review(req: ReviewRequest, db: Session = Depends(get_db)):
                 "project": f"{req.provider}:{req.owner}/{req.repo}@{req.ref}",
                 "mode": "file",
                 "filename": req.filename,
+                "language": language,
                 "overallProjectScore": file_review.get("overallFileScore", 0),
                 "topIssues": file_review.get("issues", []),
                 "file": file_review,

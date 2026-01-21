@@ -42,7 +42,7 @@ def save_file_review(db: Session, response: dict):
         file = existing_file
         file.session_id = session.id
         file.file_score = file_data.get("overallFileScore")
-        language=file_data.get("language")
+        file.language=file_data.get("language")
 
         db.query(ReviewIssue).filter_by(file_id=file.id).delete()
         db.query(ReviewSuggestion).filter_by(file_id=file.id).delete()
@@ -52,7 +52,7 @@ def save_file_review(db: Session, response: dict):
             session_id=session.id,
             filename=filename,
             file_score=file_data.get("overallFileScore"),
-            language="javascript",
+            language=file_data.get("language"),
         )
         db.add(file)
         db.flush()
@@ -124,7 +124,7 @@ def save_full_review(db: Session, response: dict):
             file = existing_file
             file.session_id = session.id
             file.file_score = file_data.get("overallFileScore")
-            file.language = "javascript"
+            file.language = file_data.get("language")
 
             db.query(ReviewIssue).filter_by(file_id=file.id).delete()
             db.query(ReviewSuggestion).filter_by(file_id=file.id).delete()
@@ -134,7 +134,7 @@ def save_full_review(db: Session, response: dict):
                 session_id=session.id,
                 filename=normalized_filename,
                 file_score=file_data.get("overallFileScore"),
-                language="javascript",
+                language=file_data.get("language"),
             )
             db.add(file)
             db.flush()
