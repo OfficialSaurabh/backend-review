@@ -82,7 +82,7 @@ class ReviewSuggestion(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     file_id = Column(BigInteger, ForeignKey("review_files.id"), nullable=False)
-
+    issue_id = Column(BigInteger, ForeignKey("review_issues.id"), nullable=True)
     title = Column(String(255))
     explanation = Column(Text)
     diff_example = Column(Text)
