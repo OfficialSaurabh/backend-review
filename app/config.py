@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     BITBUCKET_TOKEN: str
     GEMINI_API_KEY: str
     DATABASE_URL: str
-
+    UPSTASH_REDIS_URL: str
 
     class Config:
         env_file = ".env"
