@@ -83,6 +83,7 @@ def save_file_review(db: Session, response: dict):
             issue_id=issue_id,
             title=sug["title"],
             explanation=sug["explanation"],
+            code_snippet=sug.get("codeSnippet"),
             diff_example=sug.get("diff_example"),
         ))
 
@@ -176,6 +177,7 @@ def save_full_review(db: Session, response: dict):
             issue_id=issue_id,
             title=sug["title"],
             explanation=sug["explanation"],
+            code_snippet=sug.get("codeSnippet"),
             diff_example=sug.get("diff_example"),
         ))
 
