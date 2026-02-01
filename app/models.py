@@ -1,3 +1,4 @@
+import code
 from pydantic import BaseModel, model_validator
 from typing import Optional, Literal, List
 import enum
@@ -85,6 +86,7 @@ class ReviewSuggestion(Base):
     issue_id = Column(BigInteger, ForeignKey("review_issues.id"), nullable=True)
     title = Column(String(255))
     explanation = Column(Text)
+    code_snippet = Column(Text)
     diff_example = Column(Text)
 
 
