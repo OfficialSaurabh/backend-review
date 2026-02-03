@@ -3,7 +3,8 @@
 
 # Installation process
 # python -m venv venv
-# venv\Scripts\activate
+# venv\Scripts\activate(Windows CMD)
+# . venv/Scripts/activate(Git Bash / WSL / Bash)
 # pip install -r requirements.txt
 
 
