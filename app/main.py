@@ -533,9 +533,9 @@ def get_last_review(
         db.query(ReviewFile)
         .join(ReviewSession)
         .filter(
-            ReviewFile.session_id == latest_session.id,
-            # ReviewSession.project == project,
-            ReviewFile.filename == filename,
+            ReviewSession.project == project,
+        ReviewFile.session_id == latest_session.id,
+        ReviewFile.filename == filename,
         )
         .order_by(ReviewSession.created_at.desc())
         .first()
@@ -566,6 +566,7 @@ def get_last_review(
                 "id": sug.id,
                 "title": sug.title,
                 "explanation": sug.explanation,
+                 "codeSnippet": sug.code_snippet, 
                 "diff_example": sug.diff_example,
             })
 
