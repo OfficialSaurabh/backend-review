@@ -531,14 +531,13 @@ def get_last_review(
 
     file = (
         db.query(ReviewFile)
-        .join(ReviewSession)
+    .join(ReviewSession, ReviewFile.session_id == ReviewSession.id)
         .filter(
-            ReviewSession.project == project,
-        ReviewFile.session_id == latest_session.id,
-        ReviewFile.filename == filename,
-        )
-        .order_by(ReviewSession.created_at.desc())
-        .first()
+        ReviewSession.project == project,   # owner/repo/ref
+        ReviewFile.filename == filename,    # the file
+    )
+    .order_by(ReviewFile.created_at.desc())
+    .first()
     )
 
     if not file:
