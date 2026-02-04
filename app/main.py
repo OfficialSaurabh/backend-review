@@ -531,14 +531,13 @@ def get_last_review(
 
     file = (
         db.query(ReviewFile)
-        .join(ReviewSession)
+    .join(ReviewSession, ReviewFile.session_id == ReviewSession.id)
         .filter(
-            ReviewFile.session_id == latest_session.id,
-            # ReviewSession.project == project,
-            ReviewFile.filename == filename,
-        )
-        .order_by(ReviewSession.created_at.desc())
-        .first()
+        ReviewSession.project == project,   # owner/repo/ref
+        ReviewFile.filename == filename,    # the file
+    )
+    .order_by(ReviewFile.created_at.desc())
+    .first()
     )
 
     if not file:
@@ -566,6 +565,7 @@ def get_last_review(
                 "id": sug.id,
                 "title": sug.title,
                 "explanation": sug.explanation,
+                 "codeSnippet": sug.code_snippet, 
                 "diff_example": sug.diff_example,
             })
 
