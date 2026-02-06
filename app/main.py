@@ -650,3 +650,58 @@ def list_reviewed_files(
         "project": project,
         "files": [f.filename for f in files],
     }
+
+#Last Reviewed Files with summary endpoint 
+
+@app.get("/reviews/files/last")
+def get_last_reviewed_files_repo_based(
+    provider: str,
+    owner: str,
+    repo: str,
+    ref: str,
+    limit: int = 5,
+    db: Session = Depends(get_db),
+):
+    project = f"{provider}:{owner}/{repo}@{ref}"
+
+    files = (
+        db.query(ReviewFile)
+        .join(ReviewSession, ReviewFile.session_id == ReviewSession.id)
+        .filter(ReviewSession.project == project)
+        .order_by(ReviewFile.updated_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    if not files:
+        return {"exists": False, "message": "No reviewed files found"}
+
+    def build_summary(file: ReviewFile):
+        critical = sum(1 for i in file.issues if i.severity == "critical")
+        major = sum(1 for i in file.issues if i.severity == "major")
+
+        if critical > 0:
+            return "Critical issues present. Immediate attention required."
+        if major >= 3:
+            return "Multiple major issues impacting maintainability."
+        if file.file_score and file.file_score >= 85:
+            return "Well-structured with minor or no issues."
+        return "Moderate quality with room for improvement."
+
+    return {
+        "exists": True,
+        "project": project,
+        "files": [
+            {
+                "filename": f.filename,
+                "language": f.language,
+                "fileScore": f.file_score,
+                "totalIssues": len(f.issues),
+                "criticalIssues": sum(1 for i in f.issues if i.severity == "critical"),
+                "majorIssues": sum(1 for i in f.issues if i.severity == "major"),
+                "lastReviewedAt": f.updated_at,
+                "summary": build_summary(f),
+            }
+            for f in files
+        ],
+    }
