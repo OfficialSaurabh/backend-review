@@ -22,6 +22,8 @@ from app.models import (
     ReviewRequest,
     ReviewFile,
     ReviewSession,
+    ReviewIssue,
+    ReviewSuggestion,
 )
 from app.deps import (
     hash_content,
@@ -288,7 +290,6 @@ async def review(req: ReviewRequest, ctx=Depends(rate_limit), db: Session = Depe
             return response
 
         # ---------- FULL PROJECT REVIEW ----------
-        # ---------- FULL PROJECT REVIEW ----------
         try:
             tree = await provider.get_repo_tree(req.owner, req.repo, req.ref)
         except Exception:
@@ -382,136 +383,11 @@ async def review(req: ReviewRequest, ctx=Depends(rate_limit), db: Session = Depe
         save_full_review(db, full_response)
         return full_response
 
-        # try:
-        #     tree = await provider.get_repo_tree(req.owner, req.repo, req.ref)
-        # except Exception:
-        #     logger.exception("Repo tree fetch failed")
-        #     raise HTTPException(status_code=502, detail="Failed to fetch repository tree")
-
-        # results = []
-        # all_issues = []
-        # scores = []
-
-        # for item in tree:
-        #     if item["type"] != "blob":
-        #         continue
-
-        #     path = item["path"]
-        #     if not is_reviewable_file(path):
-        #         continue
-
-        #     try:
-        #         raw = await provider.get_file_content(req.owner, req.repo, req.ref, path)
-
-        #         if req.provider == "github":
-        #             content = base64.b64decode(raw["content"]).decode("utf-8", errors="ignore")
-        #         else:
-        #             content = raw
-
-        #         language = detect_language(path)
-
-        #         prompt = build_project_prompt(
-        #             owner=req.owner,
-        #             repo=req.repo,
-        #             ref=req.ref,
-        #             filename=path,
-        #             language=language,
-        #             content=content,
-        #         )
-
-        #         raw_review = review_code(prompt)
-        #         parsed = extract_json_from_gemini(raw_review)
-
-        #         results.append(parsed)
-        #         all_issues.extend(parsed.get("issues", []))
-        #         if "overallFileScore" in parsed:
-        #             scores.append(parsed["overallFileScore"])
-
-        #     except Exception:
-        #         logger.exception(f"Failed reviewing file: {path}")
-        #         continue
-
-        # overall_project_score = sum(scores) // len(scores) if scores else 0
-
-        # def avg(values):
-        #     return round(sum(values) / len(values)) if values else 0
-
-        # metrics_list = [f.get("metrics", {}) for f in results]
-
-        # full_metrics = {
-        #     "complexity": avg([m.get("complexity", 0) for m in metrics_list]),
-        #     "readability": avg([m.get("readability", 0) for m in metrics_list]),
-        #     "testCoverageEstimate": avg([m.get("testCoverageEstimate", 0) for m in metrics_list]),
-        #     "documentationScore": avg([m.get("documentationScore", 0) for m in metrics_list]),
-        # }
-
-        # full_response = {
-        #     "project": f"{req.provider}:{req.owner}/{req.repo}@{req.ref}",
-        #     "mode": "full",
-        #     "overallProjectScore": overall_project_score,
-        #     "filesReviewed": len(results),
-        #     "file": {"metrics": full_metrics},
-        #     "topIssues": all_issues[:20],
-        #     "files": results,
-        # }
-
-        # save_full_review(db, full_response)
-        # return full_response
-
     except HTTPException:
         raise
 
 
-# Last Review Retrieval Endpoint
-# @app.get("/reviews/last")
-# def get_last_review(
-#     provider: str,
-#     owner: str,
-#     repo: str,
-#     ref: str,
-#     filename: str,
-#     db: Session = Depends(get_db),
-# ):
-#     project = f"{provider}:{owner}/{repo}@{ref}"
-
-#     file = (
-#         db.query(ReviewFile)
-#         .join(ReviewSession)
-#         .filter(
-#             ReviewSession.project == project,
-#             ReviewFile.filename == filename,
-#         )
-#         .order_by(ReviewSession.created_at.desc())
-#         .first()
-#     )
-
-#     if not file:
-#         return {"exists": False, "message": "No previous review found for this file."}
-
-#     return {
-#         "exists": True,
-#         "createdAt": file.created_at,
-#         "filename": file.filename,
-#         "fileScore": file.file_score,
-#         "language": file.language,
-#         "issues": [
-#             {
-#                 "startLine": i.start_line,
-#                 "endLine": i.end_line,
-#                 "severity": i.severity,
-#                 "type": i.issue_type,
-#                 "message": i.message,
-#                 "codeSnippet": i.code_snippet,
-#             }
-#             for i in file.issues
-#         ],
-#         "metrics": {
-#             "complexity": file.metrics.complexity if file.metrics else None,
-#             "readability": file.metrics.readability if file.metrics else None,
-#             "testCoverageEstimate": file.metrics.test_coverage_estimate if file.metrics else None,
-#             "documentationScore": file.metrics.documentation_score if file.metrics else None,
-#         },
-#     }
+# Last review retrieval endpoints - by file
 @app.get("/reviews/last")
 def get_last_review(
     provider: str,
@@ -585,6 +461,7 @@ def get_last_review(
     }
 
 
+# Last review retrieval endpoints - full project summary
 @app.get("/reviews/full/last")
 def get_last_full_review(
     provider: str,
@@ -609,9 +486,34 @@ def get_last_full_review(
         return {"exists": False, "message": "No previous full review found."}
 
     raw = session.raw_response
+    top_issues = raw.get("topIssues", [])
+    issue_ids = [i.get("id") for i in top_issues if i.get("id")]
+
+    suggestions = (
+        db.query(ReviewSuggestion)
+        .join(ReviewIssue, ReviewSuggestion.issue_id == ReviewIssue.id)
+        .join(ReviewFile, ReviewIssue.file_id == ReviewFile.id)
+        .filter(
+            ReviewFile.session_id == session.id,
+            ReviewSuggestion.issue_id.in_(issue_ids)
+        )
+        .all()
+    )
+
+    suggestion_map = {}
+    for s in suggestions:
+        suggestion_map.setdefault(s.issue_id, []).append({
+            "id": s.id,
+            "title": s.title,
+            "explanation": s.explanation,
+            "codeSnippet": s.code_snippet,
+            "diff_example": s.diff_example,
+        })
+
+    for issue in top_issues:
+        issue["suggestions"] = suggestion_map.get(issue.get("id"), [])
 
     metrics = raw.get("file", {}).get("metrics", {})
-    top_issues = raw.get("topIssues", [])
     overall = raw.get("overallProjectScore", 0)
 
     return {
@@ -652,7 +554,6 @@ def list_reviewed_files(
     }
 
 #Last Reviewed Files with summary endpoint 
-
 @app.get("/reviews/files/last")
 def get_last_reviewed_files_repo_based(
     provider: str,

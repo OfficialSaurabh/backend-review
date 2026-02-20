@@ -169,6 +169,11 @@ def build_project_prompt(
 
         "Each issue object MUST also include a \"language\" field containing the file language (e.g., \"tsx\", \"python\").\n"
         "All line references MUST use the provided line numbers exactly. Do not estimate.\n"
+        "Each suggestion MUST reference exactly one issue using issueIndex.\n"
+        "codeSnippet MUST be the exact code range of that issue.\n"
+        "diff_example MUST be a valid unified diff that fixes that issue.\n"
+        "Do NOT return null for codeSnippet or diff_example.\n\n"
+        
         "Return ONLY a JSON object with this schema (no extra text):\n"
 
        "{"
@@ -187,6 +192,7 @@ def build_project_prompt(
         "], "
         "\"suggestions\": ["
         "{"
+        "\"issueIndex\": number,"
         "\"title\": string, "
         "\"explanation\": string, "
         "\"startLine\": number|null, "
