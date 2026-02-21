@@ -448,7 +448,7 @@ def get_last_review(
 
     return {
         "exists": True,
-        "createdAt": file.created_at,
+        "updatedAt": file.updated_at,
         "filename": file.filename,
         "fileScore": file.file_score,
         "language": file.language,
@@ -536,7 +536,7 @@ def get_last_full_review(
 
     return {
         "exists": True,
-        "createdAt": session.created_at,
+        "updatedAt": session.created_at,
         "filename": "FULL_PROJECT",
         "language": file.language if (file := session.files[0]) else "JavaScript",
         "fileScore": overall,
