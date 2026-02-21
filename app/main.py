@@ -376,10 +376,11 @@ async def review(req: ReviewRequest, ctx=Depends(rate_limit), db: Session = Depe
             "overallProjectScore": overall_project_score,
             "filesReviewed": len(results),
             "file": {"metrics": full_metrics},
-            "topIssues": all_issues[:20],
+            "topIssues": all_issues[:20],   
             "files": results,
         }
 
+        set_cached_review(content_hash, full_response)
         save_full_review(db, full_response)
         return full_response
 
@@ -495,7 +496,7 @@ def get_last_full_review(
         .join(ReviewFile, ReviewIssue.file_id == ReviewFile.id)
         .filter(
             ReviewFile.session_id == session.id,
-            ReviewSuggestion.issue_id.in_(issue_ids)
+            # ReviewSuggestion.issue_id.in_(issue_ids)
         )
         .all()
     )
@@ -510,16 +511,34 @@ def get_last_full_review(
             "diff_example": s.diff_example,
         })
 
-    for issue in top_issues:
-        issue["suggestions"] = suggestion_map.get(issue.get("id"), [])
+    # for issue in top_issues:
+    #     issue["suggestions"] = suggestion_map.get(issue.get("id"), [])
+        for idx, issue in enumerate(top_issues):
+            db_issue = (
+                db.query(ReviewIssue)
+                .join(ReviewFile)
+                .filter(
+                    ReviewFile.session_id == session.id
+                )
+                .offset(idx)
+                .limit(1)
+                .first()
+            )
 
-    metrics = raw.get("file", {}).get("metrics", {})
-    overall = raw.get("overallProjectScore", 0)
+            if db_issue:
+                issue["suggestions"] = suggestion_map.get(db_issue.id, [])
+            else:
+                issue["suggestions"] = []
+
+
+        metrics = raw.get("file", {}).get("metrics", {})
+        overall = raw.get("overallProjectScore", 0)
 
     return {
         "exists": True,
         "createdAt": session.created_at,
         "filename": "FULL_PROJECT",
+        "language": file.language if (file := session.files[0]) else "JavaScript",
         "fileScore": overall,
         "issues": top_issues,
         "metrics": {

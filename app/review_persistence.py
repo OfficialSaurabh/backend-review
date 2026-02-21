@@ -100,112 +100,6 @@ def save_file_review(db: Session, response: dict):
 
     db.commit()
 
-
-# def save_full_review(db: Session, response: dict):
-#     project = response["project"]
-#     files = response["files"]
-
-#     # 1. Create session
-#     session = ReviewSession(
-#         project=project,
-#         mode=response["mode"],
-#         overall_score=response["overallProjectScore"],
-#         raw_response=response,
-#     )
-#     db.add(session)
-#     db.flush()
-
-#     for file_data in files:
-#         filename = file_data.get("filename") or file_data.get("path")
-#         normalized_filename = filename if filename.startswith("/") else f"/{filename}"
-
-#         existing_file = (
-#             db.query(ReviewFile)
-#             .join(ReviewSession)
-#             .filter(
-#                 ReviewSession.project == project,
-#                 ReviewFile.filename == normalized_filename,
-#             )
-#             .first()
-#         )
-
-#         if existing_file:
-#             file = existing_file
-#             file.session_id = session.id
-#             file.file_score = file_data.get("overallFileScore")
-#             file.language = file_data.get("language")
-
-#             db.query(ReviewIssue).filter_by(file_id=file.id).delete()
-#             db.query(ReviewSuggestion).filter_by(file_id=file.id).delete()
-#             db.query(ReviewMetric).filter_by(file_id=file.id).delete()
-#         else:
-#             file = ReviewFile(
-#                 session_id=session.id,
-#                 filename=normalized_filename,
-#                 file_score=file_data.get("overallFileScore"),
-#                 language=file_data.get("language"),
-#             )
-#             db.add(file)
-#             db.flush()
-
-#         # 2. Issues (NEW SCHEMA)
-#         # 2. Issues
-#         issue_objs = []
-
-#     for issue in file_data.get("issues", []):
-#         obj = ReviewIssue(
-#             file_id=file.id,
-#             start_line=issue.get("startLine"),
-#             end_line=issue.get("endLine"),
-#             severity=_validate_severity(issue["severity"]),
-#             issue_type=issue.get("type"),
-#             message=issue["message"],
-#             code_snippet=issue.get("codeSnippet"),
-#         )
-#         db.add(obj)
-#         issue_objs.append(obj)
-
-#     db.flush()
-
-# # 3. Suggestions (linked to issue)
-#     for sug in file_data.get("suggestions", []):
-#         idx = sug.get("issueIndex")
-#         issue_id = issue_objs[idx].id if idx is not None else None
-
-#         db.add(ReviewSuggestion(
-#             file_id=file.id,
-#             issue_id=issue_id,
-#             title=sug["title"],
-#             explanation=sug["explanation"],
-#             code_snippet=sug.get("codeSnippet"),
-#             diff_example=sug.get("diff_example"),
-#         ))
-
-#         # 4. Metrics
-#         # 4. Metrics
-#         metrics = file_data.get("metrics")
-#         if metrics:
-#             existing_metric = (
-#                 db.query(ReviewMetric)
-#                 .filter(ReviewMetric.file_id == file.id)
-#                 .one_or_none()
-#             )
-
-#             if existing_metric:
-#                 existing_metric.complexity = metrics.get("complexity")
-#                 existing_metric.readability = metrics.get("readability")
-#                 existing_metric.test_coverage_estimate = metrics.get("testCoverageEstimate")
-#                 existing_metric.documentation_score = metrics.get("documentationScore")
-#             else:
-#                 db.add(ReviewMetric(
-#                     file_id=file.id,
-#                     complexity=metrics.get("complexity"),
-#                     readability=metrics.get("readability"),
-#                     test_coverage_estimate=metrics.get("testCoverageEstimate"),
-#                     documentation_score=metrics.get("documentationScore"),
-#                 ))
-#         db.commit()
-
 def save_full_review(db: Session, response: dict):
     project = response["project"]
     files = response["files"]
@@ -222,6 +116,8 @@ def save_full_review(db: Session, response: dict):
 
     for file_data in files:
         filename = file_data.get("filename") or file_data.get("path")
+        if not filename:
+            continue
         normalized_filename = filename if filename.startswith("/") else f"/{filename}"
 
         # 2. Find or create ReviewFile
@@ -257,6 +153,7 @@ def save_full_review(db: Session, response: dict):
 
         # 3. Issues
         issue_objs = []
+
         for issue in file_data.get("issues", []):
             obj = ReviewIssue(
                 file_id=file.id,
@@ -269,6 +166,7 @@ def save_full_review(db: Session, response: dict):
             )
             db.add(obj)
             issue_objs.append(obj)
+            issue["id"] = obj.id
 
         db.flush()  # 🔴 REQUIRED so issue.id exists
 
